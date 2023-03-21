@@ -2,4 +2,4 @@
 admin = [""] # 管理员ID
 
 [db]
-file = "db/yashima_guild.db"
+file = "yashima_guild.db"
