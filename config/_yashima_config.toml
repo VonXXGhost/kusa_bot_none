@@ -1,0 +1,5 @@
+[auth]
+admin = [""] # 管理员ID
+
+[db]
+file = "db/yashima_guild.db"
