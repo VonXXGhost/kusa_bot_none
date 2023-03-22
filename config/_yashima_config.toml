@@ -3,3 +3,9 @@ admin = [""] # 管理员ID
 
 [db]
 file = "yashima_guild.db"
+
+[guild]
+id = "" # 频道ID
+clock_channel_id = "" # 自习室子频道ID
+clock_role_name = "自习中" # 打卡用户组名
+clock_overtime = 200 # 打卡自动签退时长，分钟
