@@ -1,7 +1,7 @@
 """
 封装一些数据库的操作
 """
-import datetime
+from datetime import datetime
 import logging
 from typing import Optional, List
 
@@ -41,11 +41,16 @@ class ClockEventLog(BaseModel):
     user_name = CharField()
     user_id = CharField(index=True)
     status = CharField()  # 打卡状态：参考 ClockStatus
-    start_time = DateTimeField(default=datetime.datetime.now)
+    start_time = DateTimeField(default=datetime.now)
     end_time = DateTimeField(null=True)
     duration = IntegerField(default=0)  # 持续时长，单位分钟
 
-    def
+    def update_duration(self) -> int:
+        """计算并更新持续时常"""
+        if not self.start_time or not self.end_time:
+            raise ValueError("start or end time is None")
+        self.duration = int((self.end_time - self.start_time).total_seconds() / 60)
+        return self.duration
 
     @staticmethod
     def query_by_user_id_and_status(user_id: str, status: "ClockStatus") -> Optional["ClockEventLog"]:

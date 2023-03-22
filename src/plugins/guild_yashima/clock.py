@@ -13,7 +13,7 @@ from nonebot.adapters import Message
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 from nonebot_plugin_apscheduler import scheduler
-
+from datetime import timedelta
 from .db import *
 from .utils import *
 
@@ -29,7 +29,7 @@ async def clock_in_handle(matcher: Matcher, event: GuildMessageEvent):
     # 检查是否正在自习
     working_model = ClockEventLog.query_working(event.get_user_id())
     if working_model:
-        await matcher.send(at_user(event) + f"你已经打过卡了")
+        await matcher.send(at_user(event) + f"你已经打过卡惹")
         return
     # 入库
     user_id, user_name = get_sender_id_and_nickname(event)
@@ -47,13 +47,13 @@ async def clock_out_handle(matcher: Matcher, event: GuildMessageEvent):
     if not working_model:
         await matcher.send(at_user(event) + f"没有正在进行中的自习打卡记录")
         return
-    working_model.end_time = datetime.datetime.now()
+    working_model.end_time = datetime.now()
     working_model.status = ClockStatus.FINISH.value
-    working_model.duration = calc_duration(working_model.start_time, working_model.end_time)
+    duration = working_model.update_duration()
     working_model.save()
 
-    hour = int(working_model.duration / 60)
-    minu = working_model.duration % 60
+    hour = int(duration / 60)
+    minu = duration % 60
     await matcher.send(at_user(event) + f"已结束自习，本次自习时长{hour}小时{minu}分钟")
     # 修改用户组
     role_id = await get_role_id_named(get_config()['guild']['clock_role_name'])
@@ -61,20 +61,26 @@ async def clock_out_handle(matcher: Matcher, event: GuildMessageEvent):
         await set_role(False, role_id, event.get_user_id())
 
 
-def calc_duration(start_time: datetime.datetime, end_time: datetime.datetime) -> int:
-    return int((end_time - start_time).total_seconds() / 60)
+def clock_channel_id() -> str:
+    return get_config()['guild']['clock_channel_id']
 
 
 def is_clock_channel(event: GuildMessageEvent) -> bool:
-    return get_config()['guild']['clock_channel_id'] == str(event.channel_id)
+    return clock_channel_id() == str(event.channel_id)
 
 
-def find_overtime_and_process():
+@scheduler.scheduled_job('interval', minutes=1, id="clock_find_overtime_and_process")
+async def find_overtime_and_process():
     overtime = get_config()['guild']['clock_overtime']
-    for model in (ClockEventLog.select()
-            .where((ClockEventLog.status == ClockStatus.WORKING.value) &
-                   (ClockEventLog.start_time < (datetime.datetime.now() - datetime.timedelta(minutes=overtime))))
-    ):
-        model.end_time = model.start_time + datetime.timedelta(minutes=overtime)
+    model_iter = (ClockEventLog.select()
+                  .where((ClockEventLog.status == ClockStatus.WORKING.value)
+                         & (ClockEventLog.start_time < (datetime.now() - timedelta(minutes=overtime)))))
+    for model in model_iter:
+        model.end_time = model.start_time + timedelta(minutes=overtime)
         model.status = ClockStatus.OVERTIME.value
-
+        model.update_duration()
+        model.save()
+        msg = MessageSegment.at(model.user_id) + "自习已超时自动签退，记得修正数据ヾ(￣▽￣)"
+        await get_bot().send_guild_channel_msg(guild_id=get_active_guild_id(), channel_id=clock_channel_id(),
+                                               message=msg)
+    logger.debug("find_overtime_and_process end")
