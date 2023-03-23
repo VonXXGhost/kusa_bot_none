@@ -74,6 +74,7 @@ async def clock_out_handle(matcher: Matcher, event: GuildMessageEvent):
         return
     working_model.end_time = datetime.now()
     working_model.status = ClockStatus.FINISH.value
+    working_model.update_duration()
     working_model.save()
 
     await matcher.send(at_user(event) + f"已结束自习，本次自习时长{working_model.duration_desc()}")
