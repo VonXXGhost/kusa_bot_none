@@ -3,10 +3,10 @@
 """
 from nonebot.plugin import *
 from nonebot.rule import to_me
-from nonebot_plugin_guild_patch import GUILD_ADMIN, GUILD_OWNER
+
+from .clock import *
 from .db import *
 from .utils import *
-from .clock import *
 
 require("nonebot_plugin_apscheduler")
 
@@ -22,8 +22,11 @@ reload_config_matcher = on_fullmatch("重载配置", rule=to_me(), permission=is
 my_id_matcher = on_fullmatch("我的ID", ignorecase=True, rule=to_me())
 
 # 打卡相关
+clock_help = on_fullmatch("自习帮助", rule=(to_me() & is_clock_channel), handlers=[clock_help_handle])
 clock_in = on_fullmatch("开始自习", rule=(to_me() & is_clock_channel), handlers=[clock_in_handle])
 clock_out = on_fullmatch("结束自习", rule=(to_me() & is_clock_channel), handlers=[clock_out_handle])
+clock_correct_time = on_command("自习修正", rule=(to_me() & is_clock_channel), handlers=[clock_correct_time_handle])
+clock_my_statistics = on_fullmatch("我的自习", rule=(to_me() & is_clock_channel), handlers=[clock_my_statistics_handle])
 
 
 @reload_config_matcher.handle()

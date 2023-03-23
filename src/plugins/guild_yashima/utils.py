@@ -1,10 +1,11 @@
 from typing import Tuple, List, Optional
+
 import tomlkit
+from nonebot import Bot, get_bot
 from nonebot.adapters.onebot.v11 import MessageSegment
+from nonebot.log import logger
 from nonebot_plugin_guild_patch import GuildMessageEvent
 from tomlkit.toml_document import TOMLDocument
-from nonebot import Bot, get_bot
-from nonebot.log import logger
 
 
 # region config
@@ -26,6 +27,8 @@ def reload_config() -> TOMLDocument:
     global bot_config
     bot_config = load_config()
     return bot_config
+
+
 # endregion config
 
 
