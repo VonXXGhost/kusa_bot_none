@@ -3,6 +3,7 @@ admin = [""] # 管理员ID
 
 [db]
 file = "yashima_guild.db"
+msg_save_days = 30
 
 [guild]
 id = "" # 频道ID

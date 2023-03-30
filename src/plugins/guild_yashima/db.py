@@ -1,7 +1,7 @@
 """
 封装一些数据库的操作
 """
-import logging
+# import logging
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -12,9 +12,9 @@ db = DatabaseProxy()
 
 
 def init_database(db_path: str):
-    logger = logging.getLogger('peewee')
-    logger.addHandler(logging.StreamHandler())
-    logger.setLevel(logging.DEBUG)
+    # logger = logging.getLogger('peewee')
+    # logger.addHandler(logging.StreamHandler())
+    # logger.setLevel(logging.DEBUG)
 
     global db
     _db = SqliteDatabase(db_path, pragmas={
@@ -24,7 +24,7 @@ def init_database(db_path: str):
         'synchronous': 0})
     db.initialize(_db)
     _db.connect()
-    _db.create_tables(models=[ClockEventLog])
+    _db.create_tables(models=[ClockEventLog, GuildMessageRecord])
 
 
 class BaseModel(Model):
@@ -85,3 +85,13 @@ class ClockStatus(Enum):
     WORKING = "working"  # 进行中
     FINISH = "finish"  # 已结束
     OVERTIME = "overtime"  # 超时自动签退
+
+
+class GuildMessageRecord(BaseModel):
+    """
+    频道聊天消息
+    """
+    channel_id = BigIntegerField()
+    user_id = CharField()
+    content = TextField()
+    recv_time = DateTimeField(default=datetime.now, index=True)

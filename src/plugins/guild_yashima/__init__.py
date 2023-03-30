@@ -7,6 +7,7 @@ from nonebot.rule import to_me
 from .clock import *
 from .db import *
 from .utils import *
+from .records import *
 
 require("nonebot_plugin_apscheduler")
 
@@ -27,6 +28,10 @@ clock_in = on_fullmatch("开始自习", rule=(to_me() & is_clock_channel), handl
 clock_out = on_fullmatch("结束自习", rule=(to_me() & is_clock_channel), handlers=[clock_out_handle])
 clock_correct_time = on_command("自习修正", rule=(to_me() & is_clock_channel), handlers=[clock_correct_time_handle])
 clock_my_statistics = on_fullmatch("我的自习", rule=(to_me() & is_clock_channel), handlers=[clock_my_statistics_handle])
+
+# 词云相关
+msg_record = on_message(handlers=[save_recv_guild_msg_handle])
+resent_pc_unreadable_msg = on_message(handlers=[resent_pc_unreadable_msg_handle])
 
 
 @reload_config_matcher.handle()
