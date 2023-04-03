@@ -32,6 +32,7 @@ clock_my_statistics = on_fullmatch("我的自习", rule=(to_me() & is_clock_chan
 # 词云相关
 msg_record = on_message(handlers=[save_recv_guild_msg_handle])
 resent_pc_unreadable_msg = on_message(handlers=[resent_pc_unreadable_msg_handle])
+yesterday_wordcloud = on_command("昨日词云", rule=to_me(), permission=is_admin_user, handlers=[yesterday_wordcloud_handle])
 
 
 @reload_config_matcher.handle()
