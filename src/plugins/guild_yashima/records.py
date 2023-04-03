@@ -2,15 +2,28 @@
 消息存储、词云等
 有参考 https://github.com/he0119/nonebot-plugin-wordcloud
 """
+import asyncio
+import concurrent.futures
+import datetime
+import json
+import re
+from datetime import timedelta
+from functools import partial
+from io import BytesIO
+from typing import Dict
+
+import jieba
+import jieba.analyse
+import jsonpath_ng as jsonpath
+from emoji import replace_emoji
+from nonebot.adapters import Message
+from nonebot.matcher import Matcher
+from nonebot.params import EventMessage, CommandArg
+from nonebot_plugin_apscheduler import scheduler
+from wordcloud import WordCloud
+
 from .db import *
 from .utils import *
-from nonebot.adapters import Message
-from nonebot.params import EventMessage
-from nonebot_plugin_apscheduler import scheduler
-from datetime import timedelta
-import json
-import jsonpath_ng as jsonpath
-from nonebot.matcher import Matcher
 
 
 async def save_recv_guild_msg_handle(event: GuildMessageEvent):
@@ -69,3 +82,106 @@ async def resent_pc_unreadable_msg_handle(matcher: Matcher, _: GuildMessageEvent
     # link = link.replace("http", "http\u200b")
     to_sent = f"🔗 For Pc：\n{title}\n{link}"
     await matcher.send(to_sent)
+
+
+async def yesterday_wordcloud_handle(matcher: Matcher, event: GuildMessageEvent, args: Message = CommandArg()):
+    yesterday = datetime.now() - timedelta(days=1)
+    start_time = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_time = yesterday.replace(hour=23, minute=59, second=59, microsecond=0)
+    image = await get_wordcloud_by_time(int(args.extract_plain_text()), start_time, end_time)
+    if image:
+        await matcher.send('已生成指定子频昨日词云' + MessageSegment.image(image))
+    else:
+        await matcher.send(at_user(event) + '缺少足够的聊天记录生成词云')
+
+
+@scheduler.scheduled_job('cron', minute='1', hour='0', id="yesterday_wordcloud_job")
+async def yesterday_wordcloud_job():
+    for channel in get_config()['wordcloud']['enable_channels']:
+        yesterday = datetime.now() - timedelta(days=1)
+        start_time = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_time = yesterday.replace(hour=23, minute=59, second=59, microsecond=0)
+        image = await get_wordcloud_by_time(channel, start_time, end_time)
+        if image:
+            msg = '已生成本子频昨日词云' + MessageSegment.image(image)
+            await get_bot().send_guild_channel_msg(guild_id=get_active_guild_id(), channel_id=channel,
+                                                   message=msg)
+
+
+async def get_wordcloud_by_time(channel_id: int, start_time: datetime, end_time: datetime) -> Optional[BytesIO]:
+    query = (GuildMessageRecord
+             .select()
+             .where((GuildMessageRecord.channel_id == channel_id)
+                    & (GuildMessageRecord.recv_time > start_time)
+                    & (GuildMessageRecord.recv_time < end_time)))
+    messages = [model.content for model in query]
+    if len(messages) < 300:
+        logger.info(f"子频道[{channel_id}]时间范围内记录数量过少({len(messages)})，不生成词云")
+        return None
+    return await get_wordcloud(messages)
+
+
+def pre_precess(msg: str) -> str:
+    """对消息进行预处理"""
+    # 去除网址
+    # https://stackoverflow.com/a/17773849/9212748
+    msg = re.sub(
+        r"(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9]+\.[^\s]{2,}|www\.[a-zA-Z0-9]+\.[^\s]{2,})",
+        "",
+        msg,
+    )
+    # 去除 \u200b
+    msg = re.sub(r"\u200b", "", msg)
+    # 去除 emoji
+    # https://github.com/carpedm20/emoji
+    msg = replace_emoji(msg)
+    return msg
+
+
+def analyse_message(msg: str) -> Dict[str, float]:
+    """分析消息
+    分词，并统计词频
+    """
+    # 设置停用词表
+    if get_config()['wordcloud']['stopwords_path']:
+        jieba.analyse.set_stop_words(get_config()['wordcloud']['stopwords_path'])
+    # 加载用户词典
+    # if plugin_config.wordcloud_userdict_path:
+    #     jieba.load_userdict(str(plugin_config.wordcloud_userdict_path))
+    # 基于 TF-IDF 算法的关键词抽取
+    # 返回所有关键词，因为设置了数量其实也只是 tags[:topK]，不如交给词云库处理
+    words = jieba.analyse.extract_tags(msg, topK=0, withWeight=True)
+    return {word: weight for word, weight in words}
+
+
+def _get_wordcloud(messages: List[str]) -> Optional[BytesIO]:
+    message = " ".join(messages)
+    # 预处理
+    message = pre_precess(message)
+    # 分析消息。分词，并统计词频
+    frequency = analyse_message(message)
+    # 词云参数
+    wordcloud_options = {}
+    wordcloud_options.update(get_config()['wordcloud']['options'])
+    wordcloud_options.setdefault("font_path", str(get_config()['wordcloud']['font_path']))
+    wordcloud_options.setdefault("width", get_config()['wordcloud']['width'])
+    wordcloud_options.setdefault("height", get_config()['wordcloud']['height'])
+    wordcloud_options.setdefault(
+        "background_color", get_config()['wordcloud']['background_color']
+    )
+    wordcloud_options.setdefault("colormap", get_config()['wordcloud']['colormap'])
+    try:
+        wordcloud = WordCloud(**wordcloud_options)
+        image = wordcloud.generate_from_frequencies(frequency).to_image()
+        image_bytes = BytesIO()
+        image.save(image_bytes, format="PNG")
+        return image_bytes
+    except ValueError:
+        pass
+
+
+async def get_wordcloud(messages: List[str]) -> Optional[BytesIO]:
+    loop = asyncio.get_running_loop()
+    pfunc = partial(_get_wordcloud, messages)
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        return await loop.run_in_executor(pool, pfunc)
