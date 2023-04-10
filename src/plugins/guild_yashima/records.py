@@ -68,6 +68,10 @@ async def resent_pc_unreadable_msg_handle(matcher: Matcher, _: GuildMessageEvent
     elif app == 'com.tencent.miniapp_01':
         link = get_json('$.meta.detail_1.qqdocurl')
         title = get_json('$.meta.detail_1.desc')
+    elif app == 'com.tencent.structmsg':
+        view = get_json('$.view')
+        link = get_json(f'$.meta.{view}.jumpUrl')
+        title = get_json(f'$.meta.{view}.title')
 
     if not link \
             or len(link) > 300 \
