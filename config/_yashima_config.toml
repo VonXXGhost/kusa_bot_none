@@ -12,11 +12,14 @@ clock_role_name = "自习中" # 打卡用户组名
 clock_overtime = 200 # 打卡自动签退时长，分钟
 
 [wordcloud]
-stopwords_path = ""
+stopwords_path = "config/stopwords.txt"
 font_path = "config/SourceHanSans.otf"
 options = {}
 width = 1920
 height = 1200
 background_color = "white"
 colormap = "viridis"
-enable_channels = [123] # 启用的子频道ID列表
+generation_threshold = 200  # 生成词云的聊天量阈值
+disable_channels = [123]  # 不启用的子频道ID列表
+blacklist_user_ids = ["144115218735425860", "144115218680952989"]  # 词云排除用户
+overall_target_channel = 123  # 全频词云发送子频道ID
