@@ -150,6 +150,9 @@ async def get_wordcloud_by_time(channel_id: int, start_time: datetime, end_time:
                    (GuildMessageRecord.recv_time < end_time)]
     if channel_id != 0:
         expressions.append(GuildMessageRecord.channel_id == channel_id)
+    else:
+        blacklist_channels = get_config()['wordcloud']['blacklist_channels']
+        expressions.append(GuildMessageRecord.channel_id.not_in(blacklist_channels))
     blacklist = get_config()['wordcloud']['blacklist_user_ids']
     if blacklist:
         expressions.append(GuildMessageRecord.user_id.not_in(blacklist))
