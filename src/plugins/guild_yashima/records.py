@@ -8,7 +8,7 @@ import datetime
 import json
 import re
 from datetime import timedelta
-from functools import partial
+from functools import partial, reduce
 from io import BytesIO
 from typing import Dict
 
@@ -86,34 +86,77 @@ async def resent_pc_unreadable_msg_handle(matcher: Matcher, _: GuildMessageEvent
 
 async def yesterday_wordcloud_handle(matcher: Matcher, event: GuildMessageEvent, args: Message = CommandArg()):
     yesterday = datetime.now() - timedelta(days=1)
-    start_time = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_time = yesterday.replace(hour=0, minute=10, second=0, microsecond=0)
     end_time = yesterday.replace(hour=23, minute=59, second=59, microsecond=0)
-    image = await get_wordcloud_by_time(int(args.extract_plain_text()), start_time, end_time)
-    if image:
-        await matcher.send('已生成指定子频昨日词云' + MessageSegment.image(image))
+    channel_id = args.extract_plain_text()
+
+    channels = query_wordcloud_generative_channel_ids(start_time, end_time)
+    logger.info(f"以下频道将生成词云：{channels}")
+
+    resp = '指定子频'
+    if not channel_id:
+        channel_id = event.channel_id
+        resp = '本子频'
     else:
-        await matcher.send(at_user(event) + '缺少足够的聊天记录生成词云')
+        channel_id = int(channel_id)
+    image = await get_wordcloud_by_time(channel_id, start_time, end_time)
+    if image:
+        await matcher.send(f'已生成{resp}昨日词云' + MessageSegment.image(image))
+    else:
+        await matcher.send(at_user(event) + f'{resp}缺少足够的聊天记录生成词云')
 
 
 @scheduler.scheduled_job('cron', minute='1', hour='0', id="yesterday_wordcloud_job")
 async def yesterday_wordcloud_job():
-    for channel in get_config()['wordcloud']['enable_channels']:
-        yesterday = datetime.now() - timedelta(days=1)
-        start_time = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_time = yesterday.replace(hour=23, minute=59, second=59, microsecond=0)
+    yesterday = datetime.now() - timedelta(days=1)
+    start_time = yesterday.replace(hour=0, minute=10, second=0, microsecond=0)
+    end_time = yesterday.replace(hour=23, minute=59, second=59, microsecond=0)
+    channels = query_wordcloud_generative_channel_ids(start_time, end_time)
+    logger.info(f"以下频道将生成词云：{channels}")
+
+    for channel in channels:
+        logger.info(f'开始生成词云，频道ID:{channel}')
         image = await get_wordcloud_by_time(channel, start_time, end_time)
         if image:
             msg = '已生成本子频昨日词云' + MessageSegment.image(image)
             await get_bot().send_guild_channel_msg(guild_id=get_active_guild_id(), channel_id=channel,
                                                    message=msg)
 
+    logger.info(f'开始生成全频道词云')
+    image = await get_wordcloud_by_time(0, start_time, end_time)
+    if image:
+        msg = '已生成全频道昨日词云' + MessageSegment.image(image)
+        await get_bot().send_guild_channel_msg(guild_id=get_active_guild_id(),
+                                               channel_id=get_config()['wordcloud']['overall_target_channel'],
+                                               message=msg)
+
+
+def query_wordcloud_generative_channel_ids(start_time: datetime, end_time: datetime) -> List[int]:
+    """查找符合生成词云条件的所有子频道"""
+    threshold = get_config()['wordcloud']['generation_threshold']
+    query = (GuildMessageRecord
+             .select(GuildMessageRecord.channel_id, fn.COUNT(GuildMessageRecord.channel_id).alias('cnt'))
+             .where((GuildMessageRecord.recv_time > start_time)
+                    & (GuildMessageRecord.recv_time < end_time))
+             .group_by(GuildMessageRecord.channel_id)
+             .having(fn.COUNT(GuildMessageRecord.channel_id) > threshold))
+    return [model.channel_id for model in query]
+
 
 async def get_wordcloud_by_time(channel_id: int, start_time: datetime, end_time: datetime) -> Optional[BytesIO]:
+    """channel_id等于0时，查找所有子频道记录"""
+    import operator
+    expressions = [(GuildMessageRecord.recv_time > start_time),
+                   (GuildMessageRecord.recv_time < end_time)]
+    if channel_id != 0:
+        expressions.append(GuildMessageRecord.channel_id == channel_id)
+    blacklist = get_config()['wordcloud']['blacklist_user_ids']
+    if blacklist:
+        expressions.append(GuildMessageRecord.user_id.not_in(blacklist))
+
     query = (GuildMessageRecord
              .select()
-             .where((GuildMessageRecord.channel_id == channel_id)
-                    & (GuildMessageRecord.recv_time > start_time)
-                    & (GuildMessageRecord.recv_time < end_time)))
+             .where(reduce(operator.and_, expressions)))
     messages = [model.content for model in query]
     if len(messages) < 300:
         logger.info(f"子频道[{channel_id}]时间范围内记录数量过少({len(messages)})，不生成词云")
