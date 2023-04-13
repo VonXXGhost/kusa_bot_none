@@ -120,11 +120,14 @@ async def yesterday_wordcloud_job():
 
     for channel in channels:
         logger.info(f'开始生成词云，频道ID:{channel}')
-        image = await get_wordcloud_by_time(channel, start_time, end_time)
-        if image:
-            msg = '已生成本子频昨日词云' + MessageSegment.image(image)
-            await get_bot().send_guild_channel_msg(guild_id=get_active_guild_id(), channel_id=channel,
-                                                   message=msg)
+        try:
+            image = await get_wordcloud_by_time(channel, start_time, end_time)
+            if image:
+                msg = '已生成本子频昨日词云' + MessageSegment.image(image)
+                await get_bot().send_guild_channel_msg(guild_id=get_active_guild_id(), channel_id=channel,
+                                                       message=msg)
+        except Exception as ex:
+            logger.error('生成词云异常', ex)
 
     logger.info(f'开始生成全频道词云')
     image = await get_wordcloud_by_time(0, start_time, end_time)
@@ -165,7 +168,8 @@ async def get_wordcloud_by_time(channel_id: int, start_time: datetime, end_time:
              .select()
              .where(reduce(operator.and_, expressions)))
     messages = [model.content for model in query]
-    if len(messages) < 300:
+    threshold = get_config()['wordcloud']['generation_threshold']
+    if len(messages) < threshold:
         logger.info(f"子频道[{channel_id}]时间范围内记录数量过少({len(messages)})，不生成词云")
         return None
     return await get_wordcloud(messages)
